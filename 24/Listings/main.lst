@@ -1,0 +1,541 @@
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: C:\k5\C51\BIN\C51.EXE main.c OPTIMIZE(8,SPEED) BROWSE DEBUG OBJECTEXTEND PRINT(.\Listings\main.lst)
+                    - TABS(2) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #include <STC15F2K60S2.H>
+   2          #include "iic.h"
+   3          #include "ds1302.h"
+   4          
+   5          code unsigned char Seg_Table[] =
+   6          {
+   7            0xc0, //0
+   8            0xf9, //1
+   9            0xa4, //2
+  10            0xb0, //3
+  11            0x99, //4
+  12            0x92, //5
+  13            0x82, //6
+  14            0xf8, //7
+  15            0x80, //8
+  16            0x90, //9
+  17            0x88, //A
+  18            0x83, //b
+  19            0xc6, //C
+  20            0xa1, //d
+  21            0x86, //E
+  22            0x8e, //F
+  23            0xbf, //-
+  24            0x7f, //.
+  25            0xff  //close
+  26          };
+  27          //
+  28          
+  29          unsigned char count_t=0;//50ms timer1
+  30          unsigned char count_s=0;//200ms timer1
+  31          unsigned int freq=0;//timer0
+  32          int freq_nix=0;//freq nix
+  33          unsigned int freq_PF_nix=0;
+  34          unsigned char mode_1=1;//big mode
+  35          unsigned char mode_2=1;//small mode
+  36          unsigned int freq_P=2000;//max_freq
+  37          int freq_PF=100;//Ð£×¼ÆµÂÊ
+  38          unsigned int Max_freq_nix=0;//max_freq
+  39          unsigned char LED_stat=0xff;
+  40          unsigned int volt=0;
+  41          
+  42          code unsigned char R_Time_addr[3]={0x81,0x83,0x85};//Read_ds1302_Time
+  43          code unsigned char W_Time_addr[3]={0x80,0x82,0x84};//Write_ds1302_Time
+  44          unsigned char Time_data[3]={0,0,0};//store_ds1302_time
+  45          unsigned char Max_Time_data[3]={0,0,0};//store_max_ds1302_time
+  46          
+  47          void Delay(unsigned int t)    //@12.000MHz
+  48          {
+  49   1        unsigned char i, j;
+  50   1        while(t)
+  51   1        {
+  52   2          i = 12;
+  53   2          j = 169;
+  54   2          do
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 2   
+
+  55   2          {
+  56   3            while (--j);
+  57   3          } while (--i);
+  58   2          t--;
+  59   2        }
+  60   1      }
+  61          //
+  62          
+  63          void Set_HC573(unsigned char n,dat)
+  64          {
+  65   1        P0=dat;
+  66   1        
+  67   1        switch (n)
+  68   1        {
+  69   2          case 4:
+  70   2            P2=(P2&0x1f)|0x80;
+  71   2          break;
+  72   2          
+  73   2          case 5:
+  74   2            P2=(P2&0x1f)|0xa0;
+  75   2          break;
+  76   2              
+  77   2          case 6:
+  78   2            P2=(P2&0x1f)|0xc0;
+  79   2          break;
+  80   2          
+  81   2          case 7:
+  82   2            P2=(P2&0x1f)|0xe0;
+  83   2          break;
+  84   2        }
+  85   1        
+  86   1        P2=(P2&0x1f)|0x00;
+  87   1      }
+  88          //
+  89          
+  90          void Nix_Bit(unsigned char pos,dat)
+  91          {
+  92   1        Set_HC573(6,0x01<<pos);
+  93   1        Set_HC573(7,dat);
+  94   1        Delay(1);
+  95   1        Set_HC573(6,0x01<<pos);
+  96   1        Set_HC573(7,0xff);
+  97   1      }
+  98          //
+  99          
+ 100          void Close_Nix_All()
+ 101          {
+ 102   1        unsigned char i=0;
+ 103   1        for(i=0;i<7;i++)
+ 104   1          Nix_Bit(i,0xff);
+ 105   1      }
+ 106          //
+ 107          
+ 108          void Display_Nix()
+ 109          {
+ 110   1      //  Nix_Bit(0,Seg_Table[]);
+ 111   1      //  Nix_Bit(1,Seg_Table[]);
+ 112   1      //  Nix_Bit(2,Seg_Table[]);
+ 113   1      //  Nix_Bit(3,Seg_Table[]);
+ 114   1      //  Nix_Bit(4,Seg_Table[]);
+ 115   1      //  Nix_Bit(5,Seg_Table[]);
+ 116   1      //  Nix_Bit(6,Seg_Table[]);
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 3   
+
+ 117   1      //  Nix_Bit(7,Seg_Table[]);
+ 118   1        switch (mode_1)
+ 119   1        {
+ 120   2          case 1:
+ 121   2            if(freq_nix<freq_PF)
+ 122   2            {
+ 123   3              Nix_Bit(0,Seg_Table[15]);
+ 124   3              Nix_Bit(6,0xc7);
+ 125   3              Nix_Bit(7,0xc7);
+ 126   3            }
+ 127   2            else
+ 128   2            {
+ 129   3              Nix_Bit(0,Seg_Table[15]);
+ 130   3              Nix_Bit(1,Seg_Table[18]);
+ 131   3              Nix_Bit(2,Seg_Table[18]);
+ 132   3              if(freq_nix>9999)
+ 133   3                Nix_Bit(3,Seg_Table[freq_nix/10000]);
+ 134   3              if(freq_nix>999)
+ 135   3                Nix_Bit(4,Seg_Table[(freq_nix/1000)%10]);
+ 136   3              if(freq_nix>99)
+ 137   3                Nix_Bit(5,Seg_Table[(freq_nix/100)%10]);
+ 138   3              if(freq_nix>9)
+ 139   3                Nix_Bit(6,Seg_Table[(freq_nix/10)%10]);
+ 140   3              Nix_Bit(7,Seg_Table[freq_nix%10]);
+ 141   3            }
+ 142   2          break;
+ 143   2          //
+ 144   2          case 2:
+ 145   2            switch (mode_2)
+ 146   2            {
+ 147   3              case 1:
+ 148   3                Nix_Bit(0,0x8c);//P1
+ 149   3                Nix_Bit(1,Seg_Table[1]);
+ 150   3                Nix_Bit(2,Seg_Table[18]);
+ 151   3                Nix_Bit(3,Seg_Table[18]);
+ 152   3              
+ 153   3                Nix_Bit(4,Seg_Table[(freq_P/1000)%10]);
+ 154   3                Nix_Bit(5,Seg_Table[(freq_P/100)%10]);
+ 155   3                Nix_Bit(6,Seg_Table[(freq_P/10)%10]);
+ 156   3                Nix_Bit(7,Seg_Table[freq_P%10]);
+ 157   3              break;
+ 158   3              //
+ 159   3              case 2:
+ 160   3                Nix_Bit(0,0x8c);//P
+ 161   3                Nix_Bit(1,Seg_Table[2]);
+ 162   3                Nix_Bit(2,Seg_Table[18]);
+ 163   3                Nix_Bit(3,Seg_Table[18]);
+ 164   3      
+ 165   3                if(freq_PF>0)
+ 166   3                {
+ 167   4                  Nix_Bit(4,Seg_Table[18]);
+ 168   4                  Nix_Bit(5,Seg_Table[(freq_PF/100)%10]);
+ 169   4                  Nix_Bit(6,Seg_Table[(freq_PF/10)%10]);
+ 170   4                  Nix_Bit(7,Seg_Table[freq_PF%10]);
+ 171   4                }
+ 172   3              
+ 173   3                if(freq_PF<0)
+ 174   3                {
+ 175   4                  freq_PF_nix=-freq_PF;
+ 176   4                  Nix_Bit(4,Seg_Table[16]);
+ 177   4                  Nix_Bit(5,Seg_Table[(freq_PF_nix/100)%10]);
+ 178   4                  Nix_Bit(6,Seg_Table[(freq_PF_nix/10)%10]);
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 4   
+
+ 179   4                  Nix_Bit(7,Seg_Table[freq_PF_nix%10]);
+ 180   4                }
+ 181   3                
+ 182   3                if(freq_PF==0)
+ 183   3                  Nix_Bit(7,Seg_Table[0]);
+ 184   3              break;
+ 185   3            }
+ 186   2          break;
+ 187   2          //
+ 188   2          case 3:
+ 189   2            Nix_Bit(7,Seg_Table[Time_data[0]%16]);
+ 190   2            Nix_Bit(6,Seg_Table[Time_data[0]/16]);
+ 191   2            Nix_Bit(5,Seg_Table[16]);
+ 192   2            Nix_Bit(4,Seg_Table[Time_data[1]%16]);
+ 193   2            Nix_Bit(3,Seg_Table[Time_data[1]/16]);
+ 194   2            Nix_Bit(2,Seg_Table[16]);
+ 195   2            Nix_Bit(1,Seg_Table[Time_data[2]%16]);
+ 196   2            Nix_Bit(0,Seg_Table[Time_data[2]/16]);
+ 197   2          break;
+ 198   2          //
+ 199   2          case 4:
+ 200   2            switch(mode_2)
+ 201   2            {
+ 202   3              case 1:
+ 203   3                Nix_Bit(7,Seg_Table[Max_freq_nix%10]);
+ 204   3                if(Max_freq_nix>9)
+ 205   3                  Nix_Bit(6,Seg_Table[(Max_freq_nix/10)%10]);
+ 206   3                else
+ 207   3                  Nix_Bit(6,Seg_Table[18]);
+ 208   3                if(Max_freq_nix>99)
+ 209   3                  Nix_Bit(5,Seg_Table[(Max_freq_nix/100)%10]);
+ 210   3                else
+ 211   3                  Nix_Bit(5,0xff);
+ 212   3                if(Max_freq_nix>999)
+ 213   3                  Nix_Bit(4,Seg_Table[(Max_freq_nix/1000)%10]);
+ 214   3                else
+ 215   3                  Nix_Bit(4,0xff);
+ 216   3                if(Max_freq_nix>9999)
+ 217   3                  Nix_Bit(3,Seg_Table[Max_freq_nix/10000]);
+ 218   3                else
+ 219   3                  Nix_Bit(3,0xff);
+ 220   3                Nix_Bit(2,0xff);
+ 221   3                Nix_Bit(1,Seg_Table[15]);
+ 222   3                Nix_Bit(0,0x89);
+ 223   3              break;
+ 224   3              //
+ 225   3              case 2:
+ 226   3                Nix_Bit(7,Seg_Table[Max_Time_data[0]%16]);
+ 227   3                Nix_Bit(6,Seg_Table[Max_Time_data[0]/16]);
+ 228   3                Nix_Bit(5,Seg_Table[Max_Time_data[1]%16]);
+ 229   3                Nix_Bit(4,Seg_Table[Max_Time_data[1]/16]);
+ 230   3                Nix_Bit(3,Seg_Table[Max_Time_data[2]%16]);
+ 231   3                Nix_Bit(2,Seg_Table[Max_Time_data[2]/16]);
+ 232   3                Nix_Bit(1,Seg_Table[10]);
+ 233   3                Nix_Bit(0,0x89);
+ 234   3              break;
+ 235   3            }
+ 236   2          break;
+ 237   2        }
+ 238   1        Close_Nix_All();
+ 239   1      }
+ 240          //
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 5   
+
+ 241          
+ 242          void Init_Timer()//NE555
+ 243          {
+ 244   1        
+ 245   1        TMOD &= 0xF0;   
+ 246   1        TMOD |= 0x06;   
+ 247   1        TL0 = 0xFF;   
+ 248   1        TH0 = 0xFF;   
+ 249   1        TF0 = 0;    
+ 250   1        TR0 = 1;  
+ 251   1      
+ 252   1        
+ 253   1        TMOD &= 0x1F;   
+ 254   1        TL1 = (65535-50000)/256;    
+ 255   1        TH1 = (65535-50000)%256;    
+ 256   1        TF1 = 0;    
+ 257   1        TR1 = 1;      
+ 258   1        
+ 259   1        EA=1;
+ 260   1        ET0=1;
+ 261   1        ET1=1;
+ 262   1      }
+ 263          //
+ 264          
+ 265          void Ser_T0() interrupt 1
+ 266          {
+ 267   1        freq++;
+ 268   1      }
+ 269          //
+ 270          
+ 271          void Ser_T1() interrupt 3
+ 272          {
+ 273   1        TL1 = (65535-50000)/256;    
+ 274   1        TH1 = (65535-50000)%256;  
+ 275   1        count_t++;
+ 276   1        if(count_t%4==0)
+ 277   1        {
+ 278   2          count_s++;
+ 279   2          if(mode_1==1&&count_s%2==0)
+ 280   2          {
+ 281   3            Display_Nix();
+ 282   3            if(LED_stat&0x01==1)
+ 283   3            {
+ 284   4              LED_stat&=0xfe;
+ 285   4              Display_Nix();
+ 286   4            }
+ 287   3            else
+ 288   3            {
+ 289   4              LED_stat|=0x01;
+ 290   4              Display_Nix();
+ 291   4            }
+ 292   3          }
+ 293   2          if(mode_1!=1)
+ 294   2          {
+ 295   3            LED_stat|=0x01;
+ 296   3            Display_Nix();
+ 297   3          }
+ 298   2          
+ 299   2          if(freq_nix<0)
+ 300   2          {
+ 301   3            LED_stat&=0xfd;
+ 302   3            Display_Nix();
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 6   
+
+ 303   3          }
+ 304   2          else if(freq_nix>freq_P&&count_s%2==0)
+ 305   2          {
+ 306   3            if((LED_stat&0x02)>>1==1)
+ 307   3            {
+ 308   4              Display_Nix();
+ 309   4              LED_stat&=0xfd;
+ 310   4            }
+ 311   3            else
+ 312   3            {
+ 313   4              LED_stat|=0x02;
+ 314   4              Display_Nix();
+ 315   4            }
+ 316   3          }
+ 317   2          else
+ 318   2          {
+ 319   3            LED_stat|=0x02;
+ 320   3            Display_Nix();
+ 321   3          }
+ 322   2        }
+ 323   1      
+ 324   1        Set_HC573(4,LED_stat);
+ 325   1      
+ 326   1        if(count_t==20)
+ 327   1        {
+ 328   2          count_t=0;
+ 329   2          freq_nix=freq-freq_PF;
+ 330   2          
+ 331   2          if(Max_freq_nix<freq_nix)
+ 332   2          {
+ 333   3            Max_freq_nix=freq_nix;
+ 334   3      
+ 335   3            Max_Time_data[0]=Time_data[0];
+ 336   3            Max_Time_data[1]=Time_data[1];
+ 337   3            Max_Time_data[2]=Time_data[2];
+ 338   3          
+ 339   3          }
+ 340   2          freq=0;
+ 341   2      
+ 342   2        }
+ 343   1      }
+ 344          //
+ 345          
+ 346          void Set_DS1302_Time()
+ 347          {
+ 348   1        unsigned char i=0;
+ 349   1        Write_Ds1302_Byte(0x8e,0x00);
+ 350   1        
+ 351   1        for(i=0;i<3;i++)
+ 352   1        {
+ 353   2          Write_Ds1302_Byte(W_Time_addr[i],Time_data[i]);
+ 354   2        }
+ 355   1        
+ 356   1        Write_Ds1302_Byte(0x8e,0x80);
+ 357   1      }
+ 358          //
+ 359          
+ 360          void Read_DS1302_Time()
+ 361          {
+ 362   1        unsigned char i=0;
+ 363   1        for(i=0;i<3;i++)
+ 364   1        {
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 7   
+
+ 365   2          Time_data[i]=Read_Ds1302_Byte(R_Time_addr[i]);
+ 366   2        }
+ 367   1        Display_Nix();
+ 368   1      }
+ 369          //
+ 370          
+ 371          void Init_sys()
+ 372          {
+ 373   1        Set_HC573(4,0xff);
+ 374   1        Set_HC573(5,0x00);
+ 375   1        Close_Nix_All();
+ 376   1        Init_Timer();
+ 377   1        Set_DS1302_Time();
+ 378   1      }
+ 379          //
+ 380          
+ 381          void Scan_Key()
+ 382          {
+ 383   1        P44=0;
+ 384   1        P42=P34=P35=1;
+ 385   1        P30=P31=P32=P33=1;
+ 386   1        if(P32==0)
+ 387   1        {
+ 388   2          Delay(20);
+ 389   2          while(P32==0);
+ 390   2          Display_Nix();
+ 391   2          //S5
+ 392   2          if(mode_2==1)
+ 393   2            mode_2=2;
+ 394   2          else if(mode_2==2)
+ 395   2            mode_2=1;
+ 396   2          
+ 397   2        }
+ 398   1        if(P33==0)
+ 399   1        {
+ 400   2          Delay(20);
+ 401   2          while(P33==0);
+ 402   2          Display_Nix();
+ 403   2          //S4
+ 404   2          if(mode_1<4)
+ 405   2          {
+ 406   3            mode_1++;
+ 407   3            mode_2=1;
+ 408   3          }
+ 409   2          else if(mode_1==4)
+ 410   2          {
+ 411   3            mode_1=1;
+ 412   3            mode_2=1;
+ 413   3          }
+ 414   2        }
+ 415   1        
+ 416   1        P42=0;
+ 417   1        P44=P34=P35=1;
+ 418   1        P30=P31=P32=P33=1;
+ 419   1        if(P32==0)
+ 420   1        {
+ 421   2          Delay(20);
+ 422   2          while(P32==0);
+ 423   2          Display_Nix();
+ 424   2          //S9
+ 425   2          if(mode_1==2&&mode_2==1)
+ 426   2          {
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 8   
+
+ 427   3            if(freq_P==1000)
+ 428   3              freq_P=1000;
+ 429   3            else
+ 430   3              freq_P-=1000;
+ 431   3          }
+ 432   2          if(mode_1==2&&mode_2==2)
+ 433   2          {
+ 434   3            if(freq_PF==-900)
+ 435   3              freq_PF=-900;
+ 436   3            else
+ 437   3              freq_PF-=100;
+ 438   3          }
+ 439   2        }
+ 440   1        if(P33==0)
+ 441   1        {
+ 442   2          Delay(20);
+ 443   2          while(P33==0);
+ 444   2          Display_Nix();
+ 445   2          //S8
+ 446   2          if(mode_1==2&&mode_2==1)
+ 447   2          {
+ 448   3            if(freq_P==9000)
+ 449   3              freq_P=9000;
+ 450   3            else
+ 451   3              freq_P+=1000;
+ 452   3          }
+ 453   2          if(mode_1==2&&mode_2==2)
+ 454   2          {
+ 455   3            if(freq_PF==900)
+ 456   3              freq_PF=900;
+ 457   3            else
+ 458   3              freq_PF+=100;
+ 459   3          }
+ 460   2        }
+ 461   1      }
+ 462          //
+ 463          
+ 464          void Set_PCF8591_DAC()
+ 465          {
+ 466   1        I2CStart();
+ 467   1        I2CSendByte(0x90);
+ 468   1        I2CWaitAck();
+ 469   1        I2CSendByte(0x43);
+ 470   1        I2CWaitAck();
+ 471   1        if(freq_nix<0)
+ 472   1        {
+ 473   2          I2CSendByte(0);
+ 474   2          I2CWaitAck();
+ 475   2        }
+ 476   1        else if(freq_nix<500)
+ 477   1        {
+ 478   2          I2CSendByte(51);
+ 479   2          I2CWaitAck();
+ 480   2        }
+ 481   1        else if(freq_nix>500)
+ 482   1        {
+ 483   2          I2CSendByte(204/(freq_P-500)+51);
+ 484   2          I2CWaitAck();
+ 485   2        }
+ 486   1        I2CStop();
+ 487   1        Display_Nix();
+ 488   1      }
+C51 COMPILER V9.54   MAIN                                                                  04/09/2025 22:10:38 PAGE 9   
+
+ 489          //
+ 490          
+ 491          void main()
+ 492          {
+ 493   1        Init_sys();
+ 494   1        while(1)
+ 495   1        {
+ 496   2          Scan_Key();
+ 497   2          Display_Nix();
+ 498   2          Read_DS1302_Time();
+ 499   2          Set_PCF8591_DAC();
+ 500   2        }
+ 501   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2275    ----
+   CONSTANT SIZE    =     25    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     25       2
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
